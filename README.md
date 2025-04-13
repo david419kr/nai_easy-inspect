@@ -2,13 +2,13 @@
 Simply adds an inspect button on the top right of NovelAI image generation UI.  
 NAIの画像生成UIの右上に、シンプルにInspectボタンを追加します。  
 
-![image](https://github.com/user-attachments/assets/b8894ace-f48b-49aa-94ca-05c628e1b43d)
-![ss2](https://github.com/user-attachments/assets/ded64553-b61f-4da1-bc1c-d671b781d56b)
+![ss1](https://github.com/user-attachments/assets/b7228ec5-c282-47fb-8390-9b4f4665de67)
+![ss2](https://github.com/user-attachments/assets/42261123-b15c-4026-9761-964b21053f83)
 
 
-## Why even need it?
-While using randomizer or wildcards, it was sometime so confusing "which prompt is adapted now?", so I wanted to make inspect easier.  
-ランダマイザーやワイルドカードを使っていると、「今どのPromptが適用されたんだ？」と感じることがありました。で、ワンクリックでInspectできるようにしました。
+## When using with my NAI wildcards extension
+While using [NAI wildcards](https://github.com/david419kr/wildcards-for-novelai-diffusion), it was sometime so confusing "which prompt is adapted now?", so I wanted to make inspect easier.  
+[ワイルドカード拡張機能](https://github.com/david419kr/wildcards-for-novelai-diffusion)を使っていると、「今どのPromptが適用されたんだ？」と感じることがありました。で、ワンクリックでInspectできるようにしました。
 
 ## How to install
 **1. Prepare the Files**  
