@@ -1,0 +1,14 @@
+{
+    "manifest_version": 3,
+    "name": "NovelAI easy inspect",
+    "version": "1.0",
+    "description": "Add inspect button on NovelAI UI.",
+    "content_scripts": [
+      {
+        "matches": ["https://*.novelai.net/image"],
+        "js": ["content.js"],
+        "run_at": "document_idle"
+      }
+    ]
+  }
+  
