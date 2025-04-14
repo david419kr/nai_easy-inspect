@@ -1,277 +1,216 @@
+// NovelAI Easy Inspect – extended version
+// Adds global inspect button and modal‑specific inspect button when metadata dialog appears
+
+/*****************  UTILITIES  *****************/
 function waitForElement(selector) {
     return new Promise(resolve => {
         if (document.querySelector(selector)) {
             return resolve(document.querySelector(selector));
         }
-
-        const observer = new MutationObserver(mutations => {
+        const observer = new MutationObserver(() => {
             if (document.querySelector(selector)) {
                 observer.disconnect();
                 resolve(document.querySelector(selector));
             }
         });
-
-        observer.observe(document.documentElement, {
-            childList: true,
-            subtree: true
-        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
     });
 }
 
 function extractPngMetadata(arrayBuffer) {
-    const dataView = new DataView(arrayBuffer);
-    let offset = 0;
-    const signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-    for (let i = 0; i < signature.length; i++) {
-        if (dataView.getUint8(i) !== signature[i]) {
-            throw new Error("유효한 PNG 파일이 아닙니다.");
+    const dv = new DataView(arrayBuffer);
+    const sig = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    for (let i = 0; i < sig.length; i++) {
+        if (dv.getUint8(i) !== sig[i]) throw new Error("Invalid PNG file.");
+    }
+    let off = 8;
+    const meta = {};
+    while (off < dv.byteLength) {
+        if (off + 8 > dv.byteLength) break;
+        const len = dv.getUint32(off); off += 4;
+        let type = "";
+        for (let i = 0; i < 4; i++) type += String.fromCharCode(dv.getUint8(off + i));
+        off += 4;
+        const chunk = new Uint8Array(arrayBuffer, off, len);
+        off += len + 4;
+        if (type === "tEXt") {
+            const nul = chunk.indexOf(0);
+            if (nul === -1) continue;
+            const key = new TextDecoder("ascii").decode(chunk.slice(0, nul));
+            const val = new TextDecoder("latin1").decode(chunk.slice(nul + 1));
+            meta[key] = val;
+        } else if (type === "iTXt") {
+            let p = 0;
+            const keyEnd = chunk.indexOf(0, p);
+            if (keyEnd === -1) continue;
+            const key = new TextDecoder("utf-8").decode(chunk.slice(p, keyEnd));
+            p = keyEnd + 3;
+            const langEnd = chunk.indexOf(0, p);
+            if (langEnd === -1) continue;
+            p = langEnd + 1;
+            const transEnd = chunk.indexOf(0, p);
+            if (transEnd === -1) continue;
+            p = transEnd + 1;
+            const val = new TextDecoder("utf-8").decode(chunk.slice(p));
+            meta[key] = val;
         }
     }
-    offset += 8;
-    const metadata = {};
-
-    while (offset < dataView.byteLength) {
-        if (offset + 8 > dataView.byteLength) break;
-        const length = dataView.getUint32(offset);
-        offset += 4;
-        let chunkType = "";
-        for (let i = 0; i < 4; i++) {
-            chunkType += String.fromCharCode(dataView.getUint8(offset + i));
-        }
-        offset += 4;
-        const chunkData = new Uint8Array(arrayBuffer, offset, length);
-        offset += length;
-        offset += 4;
-
-        if (chunkType === "tEXt") {
-            const nullIndex = chunkData.indexOf(0);
-            if (nullIndex === -1) continue;
-            const keywordBytes = chunkData.slice(0, nullIndex);
-            const textBytes = chunkData.slice(nullIndex + 1);
-            const keyword = new TextDecoder("ascii").decode(keywordBytes);
-            const text = new TextDecoder("latin1").decode(textBytes);
-            metadata[keyword] = text;
-        }
-        if (chunkType === "iTXt") {
-            let pos = 0;
-            const keywordEnd = chunkData.indexOf(0, pos);
-            if (keywordEnd === -1) continue;
-            const keyword = new TextDecoder("utf-8").decode(chunkData.slice(pos, keywordEnd));
-            pos = keywordEnd + 1;
-            const compressionFlag = chunkData[pos];
-            pos += 1;
-            pos += 1; // compression method
-            const languageTagEnd = chunkData.indexOf(0, pos);
-            if (languageTagEnd === -1) continue;
-            pos = languageTagEnd + 1;
-            const translatedKeywordEnd = chunkData.indexOf(0, pos);
-            if (translatedKeywordEnd === -1) continue;
-            pos = translatedKeywordEnd + 1;
-            if (compressionFlag === 0) {
-                const text = new TextDecoder("utf-8").decode(chunkData.slice(pos));
-                metadata[keyword] = text;
-            } else {
-                metadata[keyword] = "[Compressed text not supported]";
-            }
-        }
-    }
-    return metadata;
+    return meta;
 }
 
-const getMainImgPrompt = async () => {
-    const mainImg = document.querySelector("div.sc-689ac2c0-25.cZBtyG img");
-    if (!mainImg) return;
-    const imageSrc = mainImg.src;
-    if (!imageSrc) return;
-
-    let pngMetadata = null;
-    let pngMetadataRaw = null;
-
-    if (!imageSrc.startsWith("blob")) {
-        const byteString = atob(imageSrc.split(',')[1]);
-        const ab = new ArrayBuffer(byteString.length);
-        const ia = new Uint8Array(ab);
-        for (let i = 0; i < byteString.length; i++) {
-            ia[i] = byteString.charCodeAt(i);
-        }
-        pngMetadataRaw = extractPngMetadata(ab);
-        pngMetadata = pngMetadataRaw.Comment;
-    } else {
-        response = await fetch(imageSrc);
-        ab = await response.arrayBuffer();
-        pngMetadataRaw = extractPngMetadata(ab);
-        pngMetadata = pngMetadataRaw.Comment;
-    }
-
-    const pngMetadataJson = JSON.parse(pngMetadata);
-
+/*****************  COMMON BUILDERS  *****************/
+function buildPromptData(metaRaw, metaJson) {
     const models = {
         "NovelAI Diffusion V4 79F47848": "NAI Diffusion V4 Full",
         "NovelAI Diffusion V4 C1CCBA86": "NAI Diffusion V4 Curated",
         "Stable Diffusion XL 7BCCAA2C": "NAI Diffusion Anime V3",
         "Stable Diffusion XL 37C2B166": "NAI Diffusion Furry V3",
         "Stable Diffusion F1022D28": "NAI Diffusion Anime V2",
+    };
+    let model = metaRaw.Source || "Unknown Model";
+    model += models[model] ? ` (${models[model]})` : " (Legacy or Unknown Model)";
+    const pd = {
+        prompt: metaJson.prompt,
+        undesired_content: metaJson.uc,
+        resolution: `${metaJson.width}x${metaJson.height}`,
+        seed: metaJson.seed,
+        sampler: metaJson.noise_schedule ? `${metaJson.sampler} (${metaJson.noise_schedule})` : metaJson.sampler,
+        steps: metaJson.steps,
+        prompt_guidance: metaJson.scale,
+        prompt_guidance_rescale: metaJson.cfg_rescale,
+        undesired_content_strength: metaJson.uncond_scale,
+        requestType: metaJson.request_type === "PromptGenerateRequest" ? "Txt2ImgRequest" : metaJson.request_type,
+        model,
+    };
+    if (metaJson.v4_prompt) {
+        pd.characterPrompts = metaJson.v4_prompt.caption.char_captions.map((c, i) => ({
+            prompt: c.char_caption,
+            uc: metaJson.v4_negative_prompt.caption.char_captions[i].char_caption,
+        }));
     }
-
-    let modelName = pngMetadataRaw.Source;
-    if (!models[modelName]) {
-        modelName += " (Legacy or Unknown Model)";
-    } else {
-        modelName += " (" + models[modelName] + ")";
-    }
-
-    const prompt = {
-        prompt: pngMetadataJson.prompt,
-        undesired_content: pngMetadataJson.uc,
-        resolution: pngMetadataJson.width + "x" + pngMetadataJson.height,
-        seed: pngMetadataJson.seed,
-        sampler: pngMetadataJson.noise_schedule ? pngMetadataJson.sampler + " (" + pngMetadataJson.noise_schedule + ")" : pngMetadataJson.sampler,
-        steps: pngMetadataJson.steps,
-        prompt_guidance: pngMetadataJson.scale,
-        prompt_guidance_rescale: pngMetadataJson.cfg_rescale,
-        undesired_content_strength: pngMetadataJson.uncond_scale,
-        requestType: pngMetadataJson.request_type,
-        model: pngMetadataRaw.Source + " (" + models[pngMetadataRaw.Source] + ")",
-    }
-
-    if (prompt.requestType === "PromptGenerateRequest") {
-        prompt.requestType = "Txt2ImgRequest";
-    }
-
-    if (pngMetadataJson.v4_prompt) {
-        const char_prompts = [];
-        for (let i = 0; i < pngMetadataJson.v4_prompt.caption.char_captions.length; i++) {
-            char_prompts.push({
-                prompt: pngMetadataJson.v4_prompt.caption.char_captions[i].char_caption,
-                uc: pngMetadataJson.v4_negative_prompt.caption.char_captions[i].char_caption,
-            });
-        }
-        prompt.characterPrompts = char_prompts;
-    }
-
-    return prompt;
+    return pd;
 }
 
-async function addPromptButton() {
-    const showPromptButton = document.createElement('button');
-    showPromptButton.textContent = "i";
-    showPromptButton.style.width = "20px";
-    showPromptButton.style.height = "20px";
-    showPromptButton.style.borderRadius = "50%";
-    showPromptButton.style.backgroundColor = "#fff";
-    showPromptButton.style.border = "1px solid #ccc";
-    showPromptButton.style.fontSize = "20px";
-    showPromptButton.style.fontWeight = "bold";
-    showPromptButton.style.color = "#000";
-    showPromptButton.style.cursor = "pointer";
-    showPromptButton.style.opacity = "0.7";
+function showPromptOverlay(pd) {
+    const ov = document.createElement("div");
+    Object.assign(ov.style, {
+        position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
+        display: "flex", justifyContent: "center", alignItems: "center",
+        background: "rgba(0,0,0,.5)", backdropFilter: "blur(5px)", zIndex: 10001,
+    });
+    const box = document.createElement("div");
+    Object.assign(box.style, {
+        position: "relative", background: "#12152c", color: "#fff", padding: "20px",
+        borderRadius: "10px", maxWidth: "600px", width: "80%", maxHeight: "80%",
+        overflowY: "auto", border: "2px solid #fff",
+    });
+    const close = document.createElement("div");
+    close.textContent = "×";
+    Object.assign(close.style, { position: "absolute", top: "10px", right: "23px", fontSize: "38px", fontWeight: "bold", cursor: "pointer" });
+    close.onclick = () => document.body.removeChild(ov);
+    ov.onclick = e => { if (e.target === ov) document.body.removeChild(ov); };
 
-    showPromptButton.style.position = "absolute";
-    showPromptButton.style.top = "2px";
-    showPromptButton.style.right = "10px";
-    showPromptButton.style.zIndex = "9999";
-
-    showPromptButton.style.display = "flex";
-    showPromptButton.style.alignItems = "center";
-    showPromptButton.style.justifyContent = "center";
-
-    const imgContainer = await waitForElement(".display-grid-images");
-
-    imgContainer.appendChild(showPromptButton);
-
-    async function showPrompt() {
-        const promptData = await getMainImgPrompt();
-        if (!promptData) {
-            alert("No image!");
-            return;
-        }
-
-        const overlay = document.createElement("div");
-        overlay.style.position = "fixed";
-        overlay.style.top = "0";
-        overlay.style.left = "0";
-        overlay.style.width = "100%";
-        overlay.style.height = "100%";
-        overlay.style.zIndex = "10001";
-        overlay.style.display = "flex";
-        overlay.style.justifyContent = "center";
-        overlay.style.alignItems = "center";
-
-        const contentBox = document.createElement("div");
-        contentBox.style.position = "relative";
-        contentBox.style.backgroundColor = "#12152c";
-        contentBox.style.padding = "20px";
-        contentBox.style.borderRadius = "10px";
-        contentBox.style.maxWidth = "600px";
-        contentBox.style.width = "80%";
-        contentBox.style.maxHeight = "80%";
-        contentBox.style.overflowY = "auto";
-        contentBox.style.color = "#fff";
-        contentBox.style.border = "2px solid #fff";
-
-        const closeButton = document.createElement("div");
-        closeButton.textContent = "×";
-        closeButton.style.position = "absolute";
-        closeButton.style.top = "10px";
-        closeButton.style.right = "23px";
-        closeButton.style.fontSize = "38px";
-        closeButton.style.fontWeight = "bold";
-        closeButton.style.cursor = "pointer";
-
-        closeButton.addEventListener("click", function () {
-            document.body.removeChild(overlay);
+    let html = `<h1>NAI Inspect</h1><h2>Prompt</h2>` +
+        `<p><strong>Prompt:</strong> <span style='font-style: italic; opacity:.8;'>${pd.prompt}</span></p>` +
+        `<p><strong>UC:</strong> <span style='font-style: italic; opacity:.8;'>${pd.undesired_content}</span></p>`;
+    if (pd.characterPrompts && pd.characterPrompts.length > 0) {
+        html += `<h4 style='opacity:.9;'>Character Prompt</h4>`;
+        pd.characterPrompts.forEach((c, i) => {
+            html += `<p><hr/></p><div style='margin-bottom:10px;'><strong>Character ${i + 1} Prompt:</strong> <span style='font-style: italic; opacity:.8;'>${c.prompt}</span><br/>` +
+                `<strong>Character ${i + 1} UC:</strong> <span style='font-style: italic; opacity:.8;'>${c.uc}</span></div>`;
         });
-
-        overlay.addEventListener("click", function (event) {
-            if (event.target === overlay) {
-                document.body.removeChild(overlay);
-            }
-        });
-
-        overlay.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
-        overlay.style.backdropFilter = "blur(5px)";
-
-        let contentHTML =
-            "<h1>NAI Inspect</h1>" +
-            "<h2>Prompt</h2>" +
-            "<p><strong>Prompt:</strong> <span style='font-style: italic; opacity: 0.8;'>" + promptData.prompt + "</span></p>" +
-            "<p><strong>UC:</strong> <span style='font-style: italic; opacity: 0.8;'>" + promptData.undesired_content + "</span></p>";
-
-        if (promptData.characterPrompts && promptData.characterPrompts.length > 0) {
-            contentHTML += "<h4 style='opacity: 0.9;'>Character Prompt</h4>";
-            promptData.characterPrompts.forEach(function (charPrompt, index) {
-                if (index === 0) {
-                    contentHTML += "<p><hr/></p>";
-                }
-                contentHTML +=
-                    "<div style='margin-bottom:10px;'>" +
-                    "<strong>Character " + (index + 1) + " Prompt:</strong> <span style='font-style: italic; opacity: 0.8;'>" + charPrompt.prompt + "</span><br/>" +
-                    "<strong>Character " + (index + 1) + " UC:</strong> <span style='font-style: italic; opacity: 0.8;'>" + charPrompt.uc + "</span><br/>" +
-                    "<p><hr/></p>" +
-                    "</div>";
-            });
-        }
-
-        contentHTML +=
-            "<h2>Details</h2>" +
-            "<strong>Model:</strong> <span style='font-style: italic; opacity: 0.8;'>" + promptData.model + "</span><br/>" +
-            "<strong>Request Type:</strong> <span style='font-style: italic; opacity: 0.8;'>" + promptData.requestType + "</span><br/>" +
-            "<strong>Resolution:</strong> <span style='font-style: italic; opacity: 0.8;'>" + promptData.resolution + "</span><br/>" +
-            "<strong>Seed:</strong> <span style='font-style: italic; opacity: 0.8;'>" + promptData.seed + "</span><br/>" +
-            "<strong>Sampler:</strong> <span style='font-style: italic; opacity: 0.8;'>" + promptData.sampler + "</span><br/>" +
-            "<strong>Steps:</strong> <span style='font-style: italic; opacity: 0.8;'>" + promptData.steps + "</span><br/>" +
-            "<strong>Prompt Guidance:</strong> <span style='font-style: italic; opacity: 0.8;'>" + promptData.prompt_guidance + "</span><br/>" +
-            "<strong>Prompt Guidance Rescale:</strong> <span style='font-style: italic; opacity: 0.8;'>" + promptData.prompt_guidance_rescale + "</span><br/>" +
-            "<strong>Undesired Content Strength:</strong> <span style='font-style: italic; opacity: 0.8;'>" + promptData.undesired_content_strength + "</span><br/>";
-
-        contentBox.innerHTML = contentHTML;
-        contentBox.appendChild(closeButton);
-
-        overlay.appendChild(contentBox);
-        document.body.appendChild(overlay);
+        html += `<p><hr/></p>`;
     }
-
-    showPromptButton.addEventListener("click", showPrompt);
+    html += `</p><h2>Details</h2>` +
+        `<strong>Model:</strong> <span style='font-style: italic; opacity:.8;'>${pd.model}</span><br/>` +
+        `<strong>Request Type:</strong> <span style='font-style: italic; opacity:.8;'>${pd.requestType}</span><br/>` +
+        `<strong>Resolution:</strong> <span style='font-style: italic; opacity:.8;'>${pd.resolution}</span><br/>` +
+        `<strong>Seed:</strong> <span style='font-style: italic; opacity:.8;'>${pd.seed}</span><br/>` +
+        `<strong>Sampler:</strong> <span style='font-style: italic; opacity:.8;'>${pd.sampler}</span><br/>` +
+        `<strong>Steps:</strong> <span style='font-style: italic; opacity:.8;'>${pd.steps}</span><br/>` +
+        `<strong>Prompt Guidance:</strong> <span style='font-style: italic; opacity:.8;'>${pd.prompt_guidance}</span><br/>` +
+        `<strong>Prompt Guidance Rescale:</strong> <span style='font-style: italic; opacity:.8;'>${pd.prompt_guidance_rescale}</span><br/>` +
+        `<strong>Undesired Content Strength:</strong> <span style='font-style: italic; opacity:.8;'>${pd.undesired_content_strength}</span><br/>`;
+    box.innerHTML = html;
+    box.appendChild(close);
+    ov.appendChild(box);
+    document.body.appendChild(ov);
 }
 
-addPromptButton();
+function createInspectButton() {
+    const b = document.createElement("button");
+    b.textContent = "i";
+    Object.assign(b.style, {
+        width: "20px", height: "20px", borderRadius: "50%", background: "#fff",
+        border: "1px solid #ccc", fontSize: "20px", fontWeight: "bold", color: "#000",
+        cursor: "pointer", opacity: .7, display: "flex", alignItems: "center", justifyContent: "center",
+    });
+    b.classList.add("nai-inspect-btn");
+    return b;
+}
+
+/*****************  GLOBAL GRID BUTTON  *****************/
+async function addGlobalPromptButton() {
+    const btn = createInspectButton();
+    Object.assign(btn.style, { position: "absolute", top: "2px", right: "10px", zIndex: 300 });
+    const grid = await waitForElement(".display-grid-images");
+    grid.appendChild(btn);
+
+    btn.onclick = async () => {
+        const img = document.querySelector("div.sc-689ac2c0-25.cZBtyG img");
+        if (!img || !img.src) return alert("No image!");
+        let ab;
+        if (img.src.startsWith("blob")) {
+            ab = await (await fetch(img.src)).arrayBuffer();
+        } else {
+            const bs = atob(img.src.split(",")[1]);
+            ab = new ArrayBuffer(bs.length);
+            const ia = new Uint8Array(ab); for (let i = 0; i < bs.length; i++) ia[i] = bs.charCodeAt(i);
+        }
+        const raw = extractPngMetadata(ab);
+        if (!raw.Comment) return alert("메타데이터가 없습니다.");
+        const pd = buildPromptData(raw, JSON.parse(raw.Comment));
+        showPromptOverlay(pd);
+    };
+}
+
+/*****************  MODAL‑SPECIFIC BUTTON  *****************/
+async function attachButtonToModal(modalRoot) {
+    const imgDiv = await waitForElement("div.sc-1f2c6c1f-42.doFZFM");
+    if (!imgDiv || imgDiv.querySelector(".nai-inspect-btn")) return;
+    imgDiv.style.position = "relative";
+    const btn = createInspectButton();
+    Object.assign(btn.style, { position: "absolute", top: "5px", right: "5px", zIndex: 9999 });
+    btn.onclick = () => {
+        const bg = imgDiv.firstChild.style.backgroundImage;
+        const m = bg.match(/data:image\/png;base64,([^"')]+)/);
+        if (!m) return alert("No PNG data.");
+        const bs = atob(m[1]);
+        const ab = new ArrayBuffer(bs.length);
+        const ia = new Uint8Array(ab); for (let i = 0; i < bs.length; i++) ia[i] = bs.charCodeAt(i);
+        let raw;
+        try { raw = extractPngMetadata(ab); } catch (e) { return alert(e.message); }
+        if (!raw.Comment) return alert("No Metadata.");
+        const pd = buildPromptData(raw, JSON.parse(raw.Comment));
+        showPromptOverlay(pd);
+    };
+    imgDiv.appendChild(btn);
+}
+
+function monitorMetadataModal() {
+    const obs = new MutationObserver(muts => {
+        muts.forEach(m => {
+            m.addedNodes.forEach(n => {
+                if (n.nodeType !== 1) return;
+                const el = n;
+                if (el.innerText && el.innerText.includes("This image has metadata!")) attachButtonToModal(el);
+                else if (el.querySelector && el.querySelector("span") && el.querySelector("span").innerText.includes("This image has metadata!")) attachButtonToModal(el);
+            });
+        });
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+}
+
+/*****************  INIT  *****************/
+addGlobalPromptButton();
+monitorMetadataModal();
