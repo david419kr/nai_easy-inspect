@@ -3,6 +3,7 @@ Simply adds an inspect button on the top right of NovelAI image generation UI.
 NAIの画像生成UIの右上に、シンプルにInspectボタンを追加します。  
 
 ![ss1](https://github.com/user-attachments/assets/b7228ec5-c282-47fb-8390-9b4f4665de67)
+![image](https://github.com/user-attachments/assets/88d68195-5e4d-4bb7-a6fe-08a58aaed0fb)
 ![ss2](https://github.com/user-attachments/assets/42261123-b15c-4026-9761-964b21053f83)
 
 
