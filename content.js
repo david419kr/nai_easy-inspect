@@ -203,8 +203,7 @@ function monitorMetadataModal() {
             m.addedNodes.forEach(n => {
                 if (n.nodeType !== 1) return;
                 const el = n;
-                if (el.innerText && el.innerText.includes("This image has metadata!")) attachButtonToModal(el);
-                else if (el.querySelector && el.querySelector("span") && el.querySelector("span").innerText.includes("This image has metadata!")) attachButtonToModal(el);
+                if (el.innerText && (el.innerText.includes("This image has metadata!") || el.innerText.includes("この画像にはメタデータが含まれています！"))) attachButtonToModal(el);
             });
         });
     });
