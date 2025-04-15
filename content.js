@@ -58,6 +58,22 @@ function extractPngMetadata(arrayBuffer) {
     return meta;
 }
 
+function findBackgroundImage(element) {
+    if (element.style && element.style.backgroundImage) {
+      return element.style.backgroundImage;
+    }
+  
+    const children = element.children;
+    for (let i = 0; i < children.length; i++) {
+      const result = findBackgroundImage(children[i]);
+      if (result) {
+        return result;
+      }
+    }
+  
+    return null;
+  }
+
 /*****************  COMMON BUILDERS  *****************/
 function buildPromptData(metaRaw, metaJson) {
     const models = {
@@ -157,7 +173,12 @@ async function addGlobalPromptButton() {
     grid.appendChild(btn);
 
     btn.onclick = async () => {
-        const img = document.querySelector("div.sc-689ac2c0-25.cZBtyG img");
+        let img = null;
+        grid.childNodes.forEach(c => {
+            if (c.querySelector("img")) {
+                img = c.querySelector("img");
+            }
+        });
         if (!img || !img.src) return alert("No image!");
         let ab;
         if (img.src.startsWith("blob")) {
@@ -168,7 +189,7 @@ async function addGlobalPromptButton() {
             const ia = new Uint8Array(ab); for (let i = 0; i < bs.length; i++) ia[i] = bs.charCodeAt(i);
         }
         const raw = extractPngMetadata(ab);
-        if (!raw.Comment) return alert("메타데이터가 없습니다.");
+        if (!raw.Comment) return alert("No metadata.");
         const pd = buildPromptData(raw, JSON.parse(raw.Comment));
         showPromptOverlay(pd);
     };
@@ -176,13 +197,15 @@ async function addGlobalPromptButton() {
 
 /*****************  MODAL‑SPECIFIC BUTTON  *****************/
 async function attachButtonToModal(modalRoot) {
-    const imgDiv = await waitForElement(".sc-7b3bd0a3-42");
+    const imgDiv = await waitForElement(".line-background-overlay");
     if (!imgDiv || imgDiv.querySelector(".nai-inspect-btn")) return;
     imgDiv.style.position = "relative";
     const btn = createInspectButton();
-    Object.assign(btn.style, { position: "absolute", top: "5px", right: "5px", zIndex: 9999 });
+    Object.assign(btn.style, { position: "absolute", top: "70px", right: "15px", zIndex: 9999 });
     btn.onclick = () => {
-        const bg = imgDiv.firstChild.style.backgroundImage;
+        // const bg = imgDiv.firstChild.nextSibling.firstChild.nextSibling.firstChild.style.backgroundImage;
+        const bg = findBackgroundImage(imgDiv);
+        if (!bg) return alert("No image!");
         const m = bg.match(/data:image\/png;base64,([^"')]+)/);
         if (!m) return alert("No PNG data.");
         const bs = atob(m[1]);
