@@ -77,7 +77,9 @@ function findBackgroundImage(element) {
 /*****************  COMMON BUILDERS  *****************/
 function buildPromptData(metaRaw, metaJson) {
     const models = {
+        "NovelAI Diffusion V4 37442FCA": "NAI Diffusion V4 Full",
         "NovelAI Diffusion V4 79F47848": "NAI Diffusion V4 Full",
+        "NovelAI Diffusion V4 7ABFFA2A" : "NAI Diffusion V4 Curated",
         "NovelAI Diffusion V4 C1CCBA86": "NAI Diffusion V4 Curated",
         "Stable Diffusion XL 7BCCAA2C": "NAI Diffusion Anime V3",
         "Stable Diffusion XL 37C2B166": "NAI Diffusion Furry V3",
