@@ -176,7 +176,7 @@ async function addGlobalPromptButton() {
 
 /*****************  MODAL‑SPECIFIC BUTTON  *****************/
 async function attachButtonToModal(modalRoot) {
-    const imgDiv = await waitForElement(".sc-1f2c6c1f-42");
+    const imgDiv = await waitForElement(".sc-7b3bd0a3-42");
     if (!imgDiv || imgDiv.querySelector(".nai-inspect-btn")) return;
     imgDiv.style.position = "relative";
     const btn = createInspectButton();
