@@ -76,17 +76,7 @@ function findBackgroundImage(element) {
 
 /*****************  COMMON BUILDERS  *****************/
 function buildPromptData(metaRaw, metaJson) {
-    const models = {
-        "NovelAI Diffusion V4 37442FCA": "NAI Diffusion V4 Full",
-        "NovelAI Diffusion V4 79F47848": "NAI Diffusion V4 Full",
-        "NovelAI Diffusion V4 7ABFFA2A" : "NAI Diffusion V4 Curated",
-        "NovelAI Diffusion V4 C1CCBA86": "NAI Diffusion V4 Curated",
-        "Stable Diffusion XL 7BCCAA2C": "NAI Diffusion Anime V3",
-        "Stable Diffusion XL 37C2B166": "NAI Diffusion Furry V3",
-        "Stable Diffusion F1022D28": "NAI Diffusion Anime V2",
-    };
     let model = metaRaw.Source || "Unknown Model";
-    model += models[model] ? ` (${models[model]})` : " (Legacy or Unknown Model)";
     const pd = {
         prompt: metaJson.prompt,
         undesired_content: metaJson.uc,
@@ -170,17 +160,12 @@ function createInspectButton() {
 /*****************  GLOBAL GRID BUTTON  *****************/
 async function addGlobalPromptButton() {
     const btn = createInspectButton();
-    Object.assign(btn.style, { position: "absolute", top: "2px", right: "10px", zIndex: 300 });
+    Object.assign(btn.style, { position: "absolute", top: "2px", right: "10px", zIndex: 300, pointerEvents: "auto" });
     const grid = await waitForElement(".display-grid-images");
     grid.appendChild(btn);
 
     btn.onclick = async () => {
-        let img = null;
-        grid.childNodes.forEach(c => {
-            if (c.querySelector("img")) {
-                img = c.querySelector("img");
-            }
-        });
+        const img = document.querySelector(".image-gen-canvas img.image-grid-image");
         if (!img || !img.src) return alert("No image!");
         let ab;
         if (img.src.startsWith("blob")) {
